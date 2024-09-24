@@ -4,7 +4,7 @@ if(COMMAND cmake_policy)
 endif(COMMAND cmake_policy)
 
 
-PROJECT (parallax_mapping_glfw)
+PROJECT (normalmap_glfw)
 
 
 IF (WIN32)
@@ -49,7 +49,7 @@ ENDIF(OpenGL_FOUND)
 INCLUDE_DIRECTORIES("${PROJECT_SOURCE_DIR}")
 
 SET (objList
-    parallax_mapping.cpp
+    normal_map.cpp
     linmath.h
     glad/glad.c
 )

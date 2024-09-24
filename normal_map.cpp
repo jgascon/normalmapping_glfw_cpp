@@ -4,7 +4,6 @@
     Jorge Gascon Perez
 */
 
-//#define GLAD_GL_IMPLEMENTATION
 #include "glad/gl.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -27,46 +26,39 @@ using namespace std;
 GLenum error_gl = GL_NO_ERROR;
 double global_last_x;
 double global_last_y;
-double rotation_x = 0.0f;
-double rotation_y = 0.0f;
+double global_rotation_x = 0.0f;
+double global_rotation_y = 0.0f;
 
-float light_pos[] = {0.0, 0.0, -10.0};
+float global_light_pos[] = {0.0, 0.0, -4.0};
 static float LIGHT_MOVE_OFFSET = 1.0f;
 
 static GLuint global_gpu_program;
 
 
-typedef struct Vertex
-{
+typedef struct Vertex {
     vec2 pos;
-    vec3 col;
     vec2 uv;
     vec3 normal;
     vec3 tangent;
 } Vertex;
 
-static const Vertex vertices[] =
-{
+static const Vertex vertices[] = {
     { { -0.6f, -0.4f },
-          { 1.f, 0.f, 0.f },
           { 0.f, 1.f },
           {0.f, 0.f, 1.f },
           {1.f, 0.f, 0.f }
         },
     { {  0.6f, -0.4f },
-          { 0.f, 1.f, 0.f },
           { 1.f, 1.f },
           {0.f, 0.f, 1.f },
           {1.f, 0.f, 0.f }
         },
     { {   0.6f,  0.4f },
-          { 0.f, 0.f, 1.f },
           { 1.f, 0.f },
           {0.f, 0.f, 1.f },
           {1.f, 0.f, 0.f }
         },
     { {   -0.6f,  0.4f },
-          { 0.f, 0.f, 1.f },
           { 0.f, 0.f },
           {0.f, 0.f, 1.f },
           {1.f, 0.f, 0.f }
@@ -76,15 +68,12 @@ static const Vertex vertices[] =
 
 static const char* vertex_shader_text =
 "#version 330\n"
-"uniform mat4 MV;\n"
-"uniform mat4 Proj;\n"
 "uniform mat4 MVP;\n"
 "uniform vec3 vLightPos;\n"
 "in vec2 vPos;\n"
 "in vec2 vUV;\n"
 "in vec3 vNormal;\n"
 "in vec3 vTangent;\n"
-"out vec3 fPos;\n"
 "out vec2 uv;\n"
 "out vec3 normal;\n"
 "out vec3 tangent;\n"
@@ -92,22 +81,17 @@ static const char* vertex_shader_text =
 "out vec3 lightPos;\n"
 "void main()\n"
 "{\n"
-"    vec4 p = MVP * vec4(vPos, 0.0, 1.0);\n"
-"    gl_Position = p;\n"
-"    fPos = p.xyz;\n"
+"    gl_Position = MVP * vec4(vPos, 0.0, 1.0);\n"
 "    uv = vUV;\n"
 "    lightPos = normalize(vLightPos);\n"
-"    mat3 normalMatrix = transpose(mat3(MVP));\n"
+"    mat3 normalMatrix = transpose(inverse(mat3(MVP)));\n"
 "    normal = normalize(normalMatrix * vNormal);\n"
 "    tangent = normalize(normalMatrix * vTangent);\n"
 "    binormal = normalize(cross(tangent, normal));\n"
-//"    binormal = normalize(normalMatrix * cross(tangent, normal));\n"
 "}\n";
-
 
 static const char* fragment_shader_text =
 "#version 330\n"
-"in vec3 fPos;\n"
 "in vec2 uv;\n"
 "in vec3 normal;\n"
 "in vec3 tangent;\n"
@@ -116,36 +100,10 @@ static const char* fragment_shader_text =
 "out vec4 fragment;\n"
 "uniform sampler2D DiffuseMap;\n"
 "uniform sampler2D NormalMap;\n"
-"uniform float depth_factor;\n"
-"uniform int number_lod_iterations;\n"
-"\n"
-"void ray_intersect(sampler2D reliefMap, inout vec4 p, inout vec3 v) {\n"
-"    v /= float(number_lod_iterations);\n"
-"    vec4 pp = p;\n"
-"    for(int i = 0; i < number_lod_iterations - 1; ++i) {\n"
-"        p.w = texture2D(reliefMap, p.xy).w;\n"
-"        if(p.w > p.z) {\n"
-"            pp = p;\n"
-"            p.xyz += v;\n"
-"        }\n"
-"    }\n"
-"\n"
-"    float f = (pp.w - pp.z) / (p.z - p.w + pp.w - pp.z);\n"
-"    p = mix(pp, p, f);\n"
-"}\n"
-"\n"
 "void main()\n"
 "{\n"
-"    vec3 V = normalize(fPos);\n"
-"    vec3 v = vec3(dot(tangent, V), dot(binormal, -V), dot(normal, -V));\n"
-//"    vec3 v = vec3(dot(V, tangent), dot(V, binormal), dot(normal, -V));\n"
-"    vec3 scale = vec3(1.0, 1.0, depth_factor);\n"
-"    v *= scale.z / (scale * v.z);\n"
-"    vec4 p = vec4(uv, vec2(0.0, 1.0));\n"
-"    ray_intersect(NormalMap, p, v);\n"
-"    vec2 uv_1 = p.xy;\n"
-"    vec4 diffuse_color = texture(DiffuseMap, uv_1);\n"
-"    vec3 normal_vector = texture(NormalMap, uv_1).rgb * 2.0 - 1.0;\n"
+"    vec4 diffuse_color = texture(DiffuseMap, uv);\n"
+"    vec3 normal_vector = texture(NormalMap, uv).rgb * 2.0 - 1.0;\n"
 "\n"
 "    normal_vector = normalize(normal_vector.x * tangent + \n"
 "                              normal_vector.y * binormal + \n"
@@ -154,6 +112,7 @@ static const char* fragment_shader_text =
 "    float intensity = clamp(dot(normal_vector, lightPos), 0.0, 1.0); \n"
 "    fragment = diffuse_color * intensity; \n"
 "}\n";
+
 
 
 static void error_callback(int error, const char* description) {
@@ -165,23 +124,23 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         return;
 
     if (key == GLFW_KEY_W)
-        light_pos[1] -= LIGHT_MOVE_OFFSET;
+        global_light_pos[1] -= LIGHT_MOVE_OFFSET;
     if (key == GLFW_KEY_S)
-        light_pos[1] += LIGHT_MOVE_OFFSET;
+        global_light_pos[1] += LIGHT_MOVE_OFFSET;
     if (key == GLFW_KEY_A)
-        light_pos[0] -= LIGHT_MOVE_OFFSET;
+        global_light_pos[0] -= LIGHT_MOVE_OFFSET;
     if (key == GLFW_KEY_D)
-        light_pos[0] += LIGHT_MOVE_OFFSET;
+        global_light_pos[0] += LIGHT_MOVE_OFFSET;
     if (key == GLFW_KEY_ESCAPE) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
-    
+
     const GLint light_pos_location = glGetUniformLocation(global_gpu_program, "vLightPos");
     if(light_pos_location < 0)
         cout << "ERROR: light_pos_location not found ..." << endl;
-    glUniform3f(light_pos_location, light_pos[0], light_pos[1], light_pos[2]);
+    glUniform3f(light_pos_location, global_light_pos[0], global_light_pos[1], global_light_pos[2]);
 
-    printf("Light position (%f %f %f)\n",light_pos[0], light_pos[1], light_pos[2]);
+    printf("Light position (%f %f %f)\n",global_light_pos[0], global_light_pos[1], global_light_pos[2]);
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
@@ -199,21 +158,21 @@ static void cursor_position_callback(GLFWwindow* window, double xpos, double ypo
     if (state != GLFW_PRESS) {
         return;
     }
-    rotation_x += (ypos - global_last_y) * 0.005;
-    rotation_y += (xpos - global_last_x) * 0.005;
+    global_rotation_x += (ypos - global_last_y) * 0.005;
+    global_rotation_y += (xpos - global_last_x) * 0.005;
 
-    if (rotation_y > 0.7) {
-        rotation_y = 0.7;
+    if (global_rotation_y > 0.7) {
+        global_rotation_y = 0.7;
     }
-    if (rotation_y < -0.7) {
-        rotation_y = -0.7;
+    if (global_rotation_y < -0.7) {
+        global_rotation_y = -0.7;
     }
 
-    if (rotation_x > 0.7) {
-        rotation_x = 0.7;
+    if (global_rotation_x > 0.7) {
+        global_rotation_x = 0.7;
     }
-    if (rotation_x < -0.7) {
-        rotation_x = -0.7;
+    if (global_rotation_x < -0.7) {
+        global_rotation_x = -0.7;
     }
 
     global_last_x = xpos;
@@ -262,8 +221,7 @@ GLuint loadTexture(string filename) {
 }
 
 
-int main(void)
-{
+int main(void) {
     glfwSetErrorCallback(error_callback);
 
     if (!glfwInit())
@@ -276,7 +234,7 @@ int main(void)
     glfwWindowHint(GLFW_RESIZABLE, 1);
     //glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, 1);
 
-    GLFWwindow* window = glfwCreateWindow(640, 480, "Parallax Mapping", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(640, 480, "Normal Mapping", NULL, NULL);
     if (!window) {
         glfwTerminate();
         exit(EXIT_FAILURE);
@@ -329,14 +287,6 @@ int main(void)
     glGenVertexArrays(1, &vertex_array);
     glBindVertexArray(vertex_array);
 
-    const GLint mv_location = glGetUniformLocation(global_gpu_program, "MV");
-    if(mv_location < 0)
-        cout << "ERROR: mv_location not found ..." << endl;
-
-    const GLint proj_location = glGetUniformLocation(global_gpu_program, "Proj");
-    if(proj_location < 0)
-        cout << "ERROR: proj_location not found ..." << endl;    
-
     const GLint mvp_location = glGetUniformLocation(global_gpu_program, "MVP");
     if(mvp_location < 0)
         cout << "ERROR: mvp_location not found ..." << endl;
@@ -344,7 +294,7 @@ int main(void)
     const GLint light_pos_location = glGetUniformLocation(global_gpu_program, "vLightPos");
     if(light_pos_location < 0)
         cout << "ERROR: light_pos_location not found ..." << endl;
-    glUniform3f(light_pos_location, light_pos[0], light_pos[1], light_pos[2]);
+    glUniform3f(light_pos_location, global_light_pos[0], global_light_pos[1], global_light_pos[2]);
 
     const GLint vpos_location = glGetAttribLocation(global_gpu_program, "vPos");
     if(vpos_location < 0)
@@ -374,16 +324,6 @@ int main(void)
     glVertexAttribPointer(vtangent_location, 3, GL_FLOAT, GL_FALSE,
                           sizeof(Vertex), (void*) offsetof(Vertex, tangent));
 
-    const GLint depth_factor_location = glGetUniformLocation(global_gpu_program, "depth_factor");
-    if(depth_factor_location < 0)
-        cout << "ERROR: depth_factor_location not found ..." << endl;
-    glUniform1f(depth_factor_location, 0.03f);
-
-    const GLint number_lod_iterations_location = glGetUniformLocation(global_gpu_program, "number_lod_iterations");
-    if(number_lod_iterations_location < 0)
-        cout << "ERROR: number_lod_iterations_location not found ..." << endl;
-    glUniform1i(number_lod_iterations_location, 16);    
-
 
     glActiveTexture(GL_TEXTURE0);
     GLuint diffuseMap = loadTexture("../images/earth.png");
@@ -408,7 +348,6 @@ int main(void)
         cout << "ERROR: normal_map_location not found ..." << endl;
     glUniform1i(normal_map_location, 1);
 
-
     while (!glfwWindowShouldClose(window)) {
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -417,21 +356,19 @@ int main(void)
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        mat4x4 mv, proj, mvp;
-        mat4x4_identity(mv);
-        mat4x4_translate(mv, 0.f, 0.f, -1.f);
+        mat4x4 m, p, mvp;
+        mat4x4_identity(m);
+        mat4x4_translate(m, 0.f, 0.f, -1.f);
 
-        mat4x4_rotate_X(mv, mv, rotation_x);
-        mat4x4_rotate_Y(mv, mv, rotation_y);
+        mat4x4_rotate_X(m, m, global_rotation_x);
+        mat4x4_rotate_Y(m, m, global_rotation_y);
 
-        mat4x4_identity(proj);
-        mat4x4_perspective(proj, 45.f, ratio, 0.0f, 10.f);
-        mat4x4_mul(mvp, proj, mv);
+        mat4x4_identity(p);
+        mat4x4_perspective(p, 45.f, ratio, 0.0f, 10.f);
+        mat4x4_mul(mvp, p, m);
 
         glUseProgram(global_gpu_program);
-        glUniformMatrix4fv(mv_location, 1, GL_FALSE, (const GLfloat*) &mv);
-        glUniformMatrix4fv(proj_location, 1, GL_FALSE, (const GLfloat*) &proj);
-        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*) &mvp);        
+        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*) &mvp);
 
         glBindVertexArray(vertex_array);
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
@@ -441,7 +378,6 @@ int main(void)
     }
 
     glfwDestroyWindow(window);
-
     glfwTerminate();
     SDL_Quit();
     exit(EXIT_SUCCESS);
